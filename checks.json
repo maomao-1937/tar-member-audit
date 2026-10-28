@@ -1,0 +1,10 @@
+[
+  {"args": ["tar_member_audit.py", "--help"], "exit": 0},
+  {"args": ["-m", "unittest", "discover", "-s", "tests", "-v"], "exit": 0},
+  {"args": ["examples/demo.py", "clean"], "exit": 0},
+  {"args": ["examples/demo.py", "duplicate"], "exit": 1},
+  {"args": ["examples/demo.py", "links", "--format", "text"], "exit": 1},
+  {"args": ["examples/demo.py", "truncated"], "exit": 2},
+  {"args": ["examples/demo.py", "compressed"], "exit": 2},
+  {"args": ["examples/demo.py", "long"], "exit": 0}
+]
