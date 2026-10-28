@@ -34,6 +34,17 @@ class LiteralPathInfo(tarfile.TarInfo):
     @classmethod
     def frombuf(cls, buf, encoding, errors):
         item = super().frombuf(buf, encoding, errors)
+        return cls._retain_path(item, buf, encoding, errors)
+
+    @classmethod
+    def _frombuf(cls, buf, encoding, errors, *, dircheck=True):
+        # CPython 3.11.17+ uses this entry point directly for metadata reads,
+        # including GNU/PAX follow-up headers with dircheck=False.
+        item = super()._frombuf(buf, encoding, errors, dircheck=dircheck)
+        return cls._retain_path(item, buf, encoding, errors)
+
+    @staticmethod
+    def _retain_path(item, buf, encoding, errors):
         name = buf[:100].split(b'\0', 1)[0].decode(encoding, errors)
         prefix = buf[345:500].split(b'\0', 1)[0].decode(encoding, errors)
         item.name = prefix + '/' + name if prefix and item.type not in tarfile.GNU_TYPES else name

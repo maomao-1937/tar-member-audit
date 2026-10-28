@@ -24,9 +24,35 @@ before their respective fixes and then passed.
 python -m unittest discover -s tests -v
 ```
 
-Final local suite: **34 test methods passed, 0 failures, 0 errors, 0 skips**.
-Methods with subtests exercise additional archive variants; 34 is the unittest
+Current local suite: **36 test methods passed, 0 failures, 0 errors, 0 skips**.
+Methods with subtests exercise additional archive variants; 36 is the unittest
 method count, not a claimed count of independent real-world archives.
+
+## Initial hosted CI failure and compatibility repair
+
+The initial Ubuntu run used CPython **3.11.17** and failed the raw directory
+empty-component test: a header containing `a//` was reported as `a` with no
+finding. The same 34-method revision passed on local CPython 3.11.15. This is a
+parser-entry-point difference, not evidence of an OS-specific filesystem issue.
+The initial hosted run is [40636264672](https://github.com/maomao-1937/tar-member-audit/actions/runs/40636264672).
+
+Official CPython source comparison identified `_frombuf` and `_fromtarfile`
+entry points added in 3.11.17. `_fromtarfile` directly calls `_frombuf`, bypassing
+the subclass's original `frombuf` override. The raw name was already trimmed
+before the later hook could retain it. GNU/PAX follow-up reads also pass
+`dircheck=False` through this internal route.
+
+A new focused regression emulates that direct route on older interpreters. It
+first failed locally with expected `a//`, observed `a`; after covering both
+header parser entry points it passed. An additional regression uses manually
+framed GNU longname and PAX path extensions to verify literal directory names
+ending in `//`, because ordinary fixture writers normalize trailing slashes.
+The repair keeps the original empty-component test and propagates `dircheck`
+unchanged. No tests are skipped or weakened.
+
+After this repair, `python -m unittest discover -s tests -v` passed **36/36**
+locally, and `python ci_checks.py` passed all **8/8** documented exit contracts.
+These local results alone do not establish that a replacement hosted run passed.
 
 The eight commands in `checks.json` were executed using the current Python:
 
@@ -62,5 +88,7 @@ bytes; only headers and metadata-extension payloads are interpreted. No native
 archive extractor, destination filesystem, production integration, external
 archive corpus, benchmark, or sandbox isolation was tested. Local results do not
 establish behavior on every Python release or OS. The implementation extends
-private `TarInfo` hooks, so new interpreter versions need their own verification.
+private `TarInfo` hooks. Regressions cover the legacy `frombuf` route and the
+direct `_frombuf` route used from 3.11.17; new interpreter versions still need
+their own verification.
 Root-managed CI may add separate evidence; it is not claimed by this local record.

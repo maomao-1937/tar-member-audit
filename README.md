@@ -75,7 +75,10 @@ targets are never resolved. Multiple codes may refer to the same member set.
 The code never calls `extract`, `extractall`, or `extractfile`, writes member
 paths, or executes archive content. It reads archive bytes into memory and uses
 private `TarInfo` parsing hooks to preserve path spelling that Python normally
-trims; compatibility with future Python implementations needs verification.
+trims. Both the older `frombuf` metadata route and the direct `_frombuf` route
+introduced in CPython 3.11.17 are covered; the latter preserves `dircheck=False`
+for GNU/PAX follow-up headers. Compatibility with future Python implementations
+needs verification.
 These explicit caps reduce work but are **not a universal CPU/memory sandbox**.
 
 An exit code 0 is not a safe-extraction certificate, vulnerability scan, malware

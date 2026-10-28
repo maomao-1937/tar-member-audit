@@ -65,6 +65,61 @@ class AuditTests(unittest.TestCase):
             data[148:156] = ('%06o\0 ' % sum(data[:512])).encode('ascii')
             self.assert_exit(data, 1)
 
+    def test_private_header_parser_route_preserves_raw_directory(self):
+        # CPython 3.11.17 routes parsing directly through _frombuf, bypassing
+        # subclasses that override only frombuf. Emulate that route on older
+        # interpreters too, so this regression stays effective across versions.
+        spec = importlib.util.spec_from_file_location('audit_private_route', CLI)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        private_parser = getattr(tarfile.TarInfo, '_frombuf', None)
+        base_parser = (private_parser or tarfile.TarInfo.frombuf).__func__
+
+        def header_parser(cls, buf, encoding, errors, *, dircheck=True):
+            if private_parser is not None:
+                return base_parser(cls, buf, encoding, errors, dircheck=dircheck)
+            return base_parser(cls, buf, encoding, errors)
+
+        def direct_route(cls, stream):
+            block = stream.fileobj.read(512)
+            item = cls._frombuf(block, stream.encoding, stream.errors, dircheck=True)
+            item.offset = stream.fileobj.tell() - 512
+            return item._proc_member(stream)
+
+        data = bytearray(archive([('a', tarfile.DIRTYPE, b'')], tarfile.USTAR_FORMAT))
+        data[:100] = b'a//' + bytes(97)
+        data[148:156] = b'        '
+        data[148:156] = ('%06o\0 ' % sum(data[:512])).encode('ascii')
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'raw.tar'
+            path.write_bytes(data)
+            with patch.object(tarfile.TarInfo, '_frombuf', classmethod(header_parser), create=True), patch.object(tarfile.TarInfo, 'fromtarfile', classmethod(direct_route)):
+                report = module.audit(path)
+        self.assertEqual(report['members'][0]['name'], 'a//')
+        self.assertEqual(report['status'], 'findings')
+
+    def test_extension_directory_literal_path_spelling(self):
+        name = 'd' * 110 + '//'
+        member = tarfile.TarInfo('fallback')
+        member.type = tarfile.DIRTYPE
+        for kind in (tarfile.GNUTYPE_LONGNAME, tarfile.XHDTYPE):
+            if kind == tarfile.GNUTYPE_LONGNAME:
+                payload = name.encode('utf-8') + b'\0'
+            else:
+                suffix = (' path=' + name + '\n').encode('utf-8')
+                length = len(suffix) + 1
+                while len(str(length)) + len(suffix) != length:
+                    length = len(str(length)) + len(suffix)
+                payload = str(length).encode('ascii') + suffix
+            extension = tarfile.TarInfo('extension')
+            extension.type = kind
+            extension.size = len(payload)
+            data = (extension.tobuf(tarfile.GNU_FORMAT) + payload +
+                    bytes((-len(payload)) % 512) + member.tobuf(tarfile.USTAR_FORMAT) + bytes(1024))
+            with self.subTest(kind=kind):
+                report = self.assert_exit(data, 1)
+                self.assertEqual(report['members'][0]['name'], name)
+
     def test_pax_regular_trailing_slash(self):
         self.assert_exit(regular('a' * 150 + '/'), 1)
 
